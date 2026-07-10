@@ -63,8 +63,8 @@ Resuelve la configuración visual y estado de un local a partir del código cort
 
 ---
 
-### 2. Registrar Feedback Interno (Calificaciones 1-3)
-Envía los comentarios de comensales insatisfechos de forma 100% anónima.
+### 2. Registrar Feedback (Calificaciones 1-5)
+Envía las valoraciones de los comensales de forma 100% anónima. Las calificaciones de 1-3 estrellas requieren comentario obligatorio, mientras que las de 4-5 estrellas lo tienen opcional.
 
 *   **Ruta:** `POST /v1/resolver/{short_code}/feedback`
 *   **Rate Limiting:** Máximo 3 peticiones por minuto por dirección IP (implementado con `slowapi`).
@@ -76,8 +76,8 @@ Envía los comentarios de comensales insatisfechos de forma 100% anónima.
     }
     ```
 *   **Validaciones:**
-    *   `rating`: Entero obligatorio entre 1 y 3 inclusive.
-    *   `comment`: String obligatorio de mínimo 10 y máximo 1000 caracteres.
+    *   `rating`: Entero obligatorio entre 1 y 5 inclusive.
+    *   `comment`: Para calificaciones 1-3: String obligatorio de mínimo 10 y máximo 1000 caracteres. Para calificaciones 4-5: String opcional (puede ser omitido o nulo).
 *   **Respuestas:**
     *   **201 Created:**
         ```json
@@ -180,8 +180,8 @@ Todos estos endpoints requieren autenticación mediante JWT.
 
 ---
 
-### 4. Consultar Historial de Quejas (Feedbacks Internos)
-Permite al administrador revisar las opiniones anónimas de 1-3 estrellas recibidas.
+### 4. Consultar Historial de Feedback (Quejas y Opiniones)
+Permite al administrador revisar las opiniones anónimas (1-5 estrellas) recibidas de sus clientes.
 
 *   **Ruta:** `GET /v1/admin/feedback`
 *   **Parámetros de consulta (Query Params):**

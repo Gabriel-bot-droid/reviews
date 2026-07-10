@@ -58,9 +58,9 @@ El enlace grabado en las tarjetas NFC físicas es inmutable una vez configurado.
 1.  **Escaneo:** El usuario final escanea el tag NFC que contiene la URL `https://midominio.com/r/a7b8c9` (donde `a7b8c9` es un `short_code` único de base de datos).
 2.  **Resolución en Frontend:** Next.js atrapa la ruta `/r/[code]` del lado del servidor (SSR) y hace una petición rápida al backend para validar el código.
 3.  **Evaluación de Estado en Backend:**
-    *   Si el `short_code` no existe: Retorna `404 Not Found`.
-    *   Si el tenant dueño de la tarjeta tiene su estado `is_active = false` (suspensión por impago): Retorna un objeto con estado `SUSPENDED`.
-    *   Si está activo: Retorna la URL de Google Maps del local, su nombre, logotipo y colores personalizados de branding.
+    *   Si el `short_code` no existe o el tenant dueño de la tarjeta ha sido borrado lógicamente (`deleted_at IS NOT NULL`): Retorna `404 Not Found`.
+    *   Si el tenant dueño de la tarjeta está inactivo (`is_active = false`, por ejemplo, por suspensión por impago): Retorna un objeto con estado `SUSPENDED`.
+    *   Si está activo y no eliminado: Retorna la URL de Google Maps del local, su nombre, logotipo y colores personalizados de branding.
 4.  **Decisión en Frontend (UI):**
     *   Si el estado es `SUSPENDED`: El frontend renderiza inmediatamente una pantalla limpia con un mensaje de servicio inactivo.
     *   Si el estado es `ACTIVE`: Carga la interfaz dinámica del embudo de calificación.
@@ -86,16 +86,20 @@ sequenceDiagram
     
     alt Califica 4-5 estrellas (Alta)
         Cliente->>FE: Selecciona 4 o 5 estrellas
+        FE->>BE: POST /v1/resolver/{short_code}/feedback (Registra calificación sin comentario)
         FE->>Cliente: Muestra botón de agradecimiento "Ir a Google"
         Cliente->>Google: Redirección a Google Maps para escribir reseña
-        FE->>BE: POST /v1/metrics/scan (Registra métrica de éxito)
+        Cliente->>FE: Click en Google
+        FE->>BE: POST /v1/resolver/{short_code}/metric (Registra evento CLICK_GOOGLE)
     else Califica 1-3 estrellas (Baja)
         Cliente->>FE: Selecciona 1, 2 o 3 estrellas
         FE->>Cliente: Abre formulario interno de quejas (Anónimo)
         Cliente->>FE: Envía comentario ("El servicio fue lento...")
-        FE->>BE: POST /v1/reviews/internal (Guarda comentario interno)
+        FE->>BE: POST /v1/resolver/{short_code}/feedback (Guarda calificación y comentario)
         Note over FE, Cliente: Enlace sutil al final del formulario: "Ir a Google"
         Cliente-->>Google: Opcional (salida de emergencia)
+        Cliente->>FE: Click en Google (opcional)
+        FE->>BE: POST /v1/resolver/{short_code}/metric (Registra evento CLICK_GOOGLE si lo pulsa)
     end
 ```
 

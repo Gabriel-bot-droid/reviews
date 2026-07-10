@@ -90,12 +90,17 @@ CREATE TABLE tenants (
 -- 2. Tabla de Usuarios Administradores (ON DELETE RESTRICT para proteger datos históricos B2B)
 CREATE TABLE users (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    tenant_id UUID NOT NULL REFERENCES tenants(id) ON DELETE RESTRICT,
+    tenant_id UUID REFERENCES tenants(id) ON DELETE RESTRICT, -- Nullable para súper administradores
     email VARCHAR(255) NOT NULL UNIQUE,
     password_hash VARCHAR(255) NOT NULL,
     role VARCHAR(50) NOT NULL DEFAULT 'admin', -- 'admin', 'superadmin'
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    -- Garantiza consistencia de tenant según el rol
+    CONSTRAINT chk_user_tenant_by_role CHECK (
+        (role = 'superadmin' AND tenant_id IS NULL) OR
+        (role != 'superadmin' AND tenant_id IS NOT NULL)
+    )
 );
 
 -- 3. Tabla de Locales
@@ -125,9 +130,14 @@ CREATE TABLE feedbacks (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     location_id UUID NOT NULL REFERENCES locations(id) ON DELETE RESTRICT,
     tenant_id UUID NOT NULL REFERENCES tenants(id) ON DELETE RESTRICT,
-    rating INT NOT NULL CHECK (rating BETWEEN 1 AND 3),
-    comment TEXT NOT NULL CHECK (char_length(comment) >= 10),
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+    rating INT NOT NULL CHECK (rating BETWEEN 1 AND 5),
+    comment TEXT, -- Nullable para valoraciones altas (4 y 5)
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    -- Restricción para exigir comentario >= 10 caracteres solo en calificaciones bajas (1-3)
+    CONSTRAINT chk_feedback_comment_rating CHECK (
+        (rating IN (4, 5)) OR
+        (rating IN (1, 2, 3) AND comment IS NOT NULL AND char_length(comment) >= 10)
+    )
 );
 
 -- 6. Tabla de Métricas de Escaneo
@@ -176,12 +186,17 @@ Las políticas están diseñadas para permitir:
 ### Script SQL para Habilitación de RLS:
 
 ```sql
--- Habilitar RLS en las tablas
+-- Habilitar RLS en las tablas y forzar su aplicación para el propietario/backend
 ALTER TABLE users ENABLE ROW LEVEL SECURITY;
+ALTER TABLE users FORCE ROW LEVEL SECURITY;
 ALTER TABLE locations ENABLE ROW LEVEL SECURITY;
+ALTER TABLE locations FORCE ROW LEVEL SECURITY;
 ALTER TABLE nfc_cards ENABLE ROW LEVEL SECURITY;
+ALTER TABLE nfc_cards FORCE ROW LEVEL SECURITY;
 ALTER TABLE feedbacks ENABLE ROW LEVEL SECURITY;
+ALTER TABLE feedbacks FORCE ROW LEVEL SECURITY;
 ALTER TABLE scan_metrics ENABLE ROW LEVEL SECURITY;
+ALTER TABLE scan_metrics FORCE ROW LEVEL SECURITY;
 
 -- 1. Políticas para Usuarios Administradores
 CREATE POLICY users_tenant_policy ON users
@@ -192,7 +207,11 @@ CREATE POLICY users_tenant_policy ON users
 
 -- 2. Políticas para Locales
 CREATE POLICY locations_select_policy ON locations
-    FOR SELECT USING (true); -- SELECT público para resolución de short_code
+    FOR SELECT USING (
+        current_setting('app.current_user_role', true) = 'superadmin'
+        OR tenant_id = NULLIF(current_setting('app.current_tenant_id', true), '')::uuid
+        OR NULLIF(current_setting('app.current_user_role', true), '') IS NULL -- Permite lectura pública anónima
+    );
 
 CREATE POLICY locations_admin_policy ON locations
     FOR ALL 
@@ -203,7 +222,11 @@ CREATE POLICY locations_admin_policy ON locations
 
 -- 3. Políticas para Tarjetas NFC
 CREATE POLICY nfc_cards_select_policy ON nfc_cards
-    FOR SELECT USING (true); -- SELECT público para resolución de short_code
+    FOR SELECT USING (
+        current_setting('app.current_user_role', true) = 'superadmin'
+        OR tenant_id = NULLIF(current_setting('app.current_tenant_id', true), '')::uuid
+        OR NULLIF(current_setting('app.current_user_role', true), '') IS NULL -- Permite lectura pública anónima
+    );
 
 CREATE POLICY nfc_cards_admin_policy ON nfc_cards
     FOR ALL 

@@ -38,10 +38,10 @@ El aislamiento de datos se ejecuta en múltiples capas de la pila técnica:
 
 Dado que los códigos NFC son públicos y físicos, el sistema implementa contramedidas contra el spam de escaneos y comentarios falsos, así como inyecciones maliciosas:
 
-*   **Rate Limiting en Endpoint de Feedback:** El backend limita las peticiones al endpoint `POST /v1/resolver/{short_code}/feedback` por dirección IP (utilizando un almacenamiento rápido en memoria o Redis). Un cliente no puede enviar más de 3 quejas por minuto desde la misma red.
+*   **Rate Limiting en Endpoint de Feedback:** El backend limita las peticiones al endpoint `POST /v1/resolver/{short_code}/feedback` por dirección IP utilizando un almacenamiento centralizado en Redis para soportar múltiples instancias de la API. Un cliente no puede enviar más de 3 quejas por minuto desde la misma red.
 *   **Limpieza de Métricas:** Para evitar ataques de inundación que distorsionen los gráficos de analíticas, el backend ignora registros consecutivos de escaneos (`SCAN`) desde una misma IP dentro de un marco de tiempo corto (ej. 10 minutos), registrando únicamente la primera interacción.
 *   **Sanitización y Validación de Inputs (Protección XSS):** Dado que se dispone de un campo de texto abierto para la retroalimentación, existe el riesgo de inyecciones de código HTML/JavaScript (Cross-Site Scripting).
-    *   *Backend:* El backend en FastAPI utiliza Pydantic para validar los tipos y límites de caracteres en las entradas, y sanitiza los strings de entrada eliminando etiquetas HTML peligrosas antes de almacenar el comentario en la base de datos.
+    *   *Backend:* El backend en FastAPI utiliza Pydantic para validar los tipos y límites de caracteres, e implementa una rutina explícita de sanitización de strings (escapando caracteres especiales y removiendo tags HTML mediante validadores personalizados en los esquemas) antes de almacenar cualquier comentario en la base de datos.
     *   *Frontend:* Next.js escapa de forma automática todo el texto de las variables que se renderizan en el panel de administración, previniendo que cualquier script malicioso se ejecute en el navegador del administrador del local.
 
 ---
