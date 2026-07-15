@@ -1,6 +1,7 @@
 import uuid
 from datetime import datetime
-from sqlalchemy import String, DateTime, ForeignKey, CheckConstraint, func
+from typing import Optional
+from sqlalchemy import String, DateTime, ForeignKey, CheckConstraint, Integer, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.models.base import Base
 
@@ -23,6 +24,10 @@ class ScanMetric(Base):
         String(50), 
         nullable=False
     )
+    rating: Mapped[Optional[int]] = mapped_column(
+        Integer,
+        nullable=True
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), 
         server_default=func.now(), 
@@ -38,5 +43,9 @@ class ScanMetric(Base):
         CheckConstraint(
             "event_type IN ('SCAN', 'CLICK_GOOGLE')", 
             name="chk_metric_event_type"
+        ),
+        CheckConstraint(
+            "rating IS NULL OR (rating BETWEEN 1 AND 5)",
+            name="chk_metric_rating_range"
         ),
     )

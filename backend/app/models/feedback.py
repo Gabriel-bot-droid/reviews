@@ -41,8 +41,4 @@ class Feedback(Base):
     # Restricciones a nivel de tabla
     __table_args__ = (
         CheckConstraint("rating BETWEEN 1 AND 5", name="chk_feedback_rating_range"),
-        CheckConstraint(
-            "(rating IN (4, 5)) OR (rating IN (1, 2, 3) AND comment IS NOT NULL AND char_length(comment) >= 10)",
-            name="chk_feedback_comment_rating"
-        ),
     )

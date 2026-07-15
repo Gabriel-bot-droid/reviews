@@ -76,15 +76,26 @@ async def get_current_user(
     return user
 
 async def get_db_session(
+    db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ) -> AsyncGenerator[AsyncSession, None]:
     """
     Dependencia inyectable para endpoints del panel de administración.
-    Retorna una sesión de base de datos pre-configurada asíncronamente con RLS 
-    basándose en el inquilino (tenant_id) y rol del usuario autenticado.
+    Reutiliza la misma sesión de base de datos asíncrona de get_current_user,
+    configurando las variables RLS basándose en el inquilino y rol del usuario.
     """
-    async for session in get_tenant_db(
-        tenant_id=current_user.tenant_id, 
-        role=current_user.role
-    ):
-        yield session
+    # Configurar el rol si existe en el JWT/Usuario
+    if current_user.role:
+        await db.execute(
+            text("SELECT set_config('app.current_user_role', :role, true)"),
+            {"role": current_user.role}
+        )
+    
+    # Configurar el tenant_id si existe y el rol no es súper administrador
+    if current_user.tenant_id and current_user.role != "superadmin":
+        await db.execute(
+            text("SELECT set_config('app.current_tenant_id', :tenant_id, true)"),
+            {"tenant_id": str(current_user.tenant_id)}
+        )
+    
+    yield db

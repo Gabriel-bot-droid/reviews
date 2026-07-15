@@ -1,6 +1,12 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 from app.api.v1.api import api_router
+from app.core.config import settings
+
+from slowapi.errors import RateLimitExceeded
+from slowapi import _rate_limit_exceeded_handler
+from app.core.limiter import limiter
 
 # Inicializar la aplicación FastAPI con metadata descriptiva
 app = FastAPI(
@@ -9,11 +15,18 @@ app = FastAPI(
     version="1.0.0",
 )
 
+# Integrar el limitador de tasa y su manejador de respuestas de error (429 Too Many Requests)
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+
+# Servir archivos estáticos localmente (para los logotipos subidos por los administradores)
+app.mount("/static", StaticFiles(directory="static"), name="static")
+
 # Configuración de middleware CORS (Cross-Origin Resource Sharing)
-# Permite conectar de forma segura el frontend Next.js en local (puerto 3000)
+# Permite conectar de forma segura el frontend Next.js configurado en las variables de entorno
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000"],
+    allow_origins=settings.CORS_ORIGINS,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

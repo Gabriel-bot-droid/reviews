@@ -18,9 +18,12 @@ AsyncSessionLocal = async_sessionmaker(
 async def get_db() -> AsyncGenerator[AsyncSession, None]:
     """
     Generador básico de sesión de base de datos asíncrona.
-    No define variables de contexto RLS (útil para migración de datos o llamadas anónimas genéricas).
+    Define por defecto el rol 'anonymous' en PostgreSQL para obligar RLS en lecturas públicas.
     """
     async with AsyncSessionLocal() as session:
+        await session.execute(
+            text("SELECT set_config('app.current_user_role', 'anonymous', true)")
+        )
         yield session
 
 async def get_tenant_db(
