@@ -224,5 +224,8 @@ async def main():
     await run_api_tests(location_id)
     print("\n¡Pruebas del flujo de negocio de la Fase 3 completadas con 100% de éxito!")
 
+    from app.commands.create_superadmin import create_superadmin
+    await create_superadmin()
+
 if __name__ == "__main__":
     asyncio.run(main())

@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useRef } from "react";
 import { useRouter } from "next/navigation";
-import { api } from "@/utils/api";
+import { api, BACKEND_URL, decodeToken } from "@/utils/api";
 
 export default function AdminPage() {
   const router = useRouter();
@@ -12,6 +12,13 @@ export default function AdminPage() {
   const [authenticated, setAuthenticated] = useState(false);
   const [activeTab, setActiveTab] = useState("dashboard"); // dashboard, feedback, settings
   const [loading, setLoading] = useState(true);
+  const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+  const [hoveredIndex, setHoveredIndex] = useState(null);
+
+  const handleTabChange = (tab) => {
+    setActiveTab(tab);
+    setIsSidebarOpen(false);
+  };
 
   // Estados de datos
   const [analytics, setAnalytics] = useState(null);
@@ -21,8 +28,6 @@ export default function AdminPage() {
 
   // Estados del Formulario de Configuración
   const [configName, setConfigName] = useState("");
-  const [configPrimary, setConfigPrimary] = useState("#3b82f6");
-  const [configSecondary, setConfigSecondary] = useState("#1d4ed8");
   const [configMapsUrl, setConfigMapsUrl] = useState("");
   const [logoFile, setLogoFile] = useState(null);
   const [logoPreview, setLogoPreview] = useState("");
@@ -32,10 +37,18 @@ export default function AdminPage() {
 
   // Comprobar autenticación en el cliente
   useEffect(() => {
-    if (!api.auth.isAuthenticated()) {
-      router.push("/login");
-    } else {
-      setAuthenticated(true);
+    if (typeof window !== "undefined") {
+      const token = localStorage.getItem("admin_token");
+      if (!token) {
+        router.push("/login");
+      } else {
+        const decoded = decodeToken(token);
+        if (decoded && decoded.requires_password_change) {
+          router.push("/reset-password");
+        } else {
+          setAuthenticated(true);
+        }
+      }
     }
   }, [router]);
 
@@ -58,14 +71,12 @@ export default function AdminPage() {
 
         setAnalytics(analyticsData);
         setLocation(locationData);
-        
+
         // Rellenar formulario
         setConfigName(locationData.name);
-        setConfigPrimary(locationData.primary_color || "#3b82f6");
-        setConfigSecondary(locationData.secondary_color || "#1d4ed8");
         setConfigMapsUrl(locationData.google_maps_url || "");
         if (locationData.logo_url) {
-          setLogoPreview(`http://localhost:8000${locationData.logo_url}`);
+          setLogoPreview(`${BACKEND_URL}${locationData.logo_url}`);
         }
 
         // Cargar feedbacks paginados
@@ -110,8 +121,6 @@ export default function AdminPage() {
       // 2. Actualizar configuración textual
       const updatedLocation = await api.admin.updateLocation({
         name: configName,
-        primary_color: configPrimary,
-        secondary_color: configSecondary,
         google_maps_url: configMapsUrl,
         logo_url: currentLogoUrl
       });
@@ -119,7 +128,7 @@ export default function AdminPage() {
       setLocation(updatedLocation);
       setLogoFile(null);
       if (updatedLocation.logo_url) {
-        setLogoPreview(`http://localhost:8000${updatedLocation.logo_url}`);
+        setLogoPreview(`${BACKEND_URL}${updatedLocation.logo_url}`);
       }
       setSaveSuccess(true);
       setTimeout(() => setSaveSuccess(false), 3000);
@@ -160,15 +169,22 @@ export default function AdminPage() {
   // --- Lógica del Generador de Gráfica SVG Semanal ---
   const renderWeeklyActivityChart = () => {
     if (!analytics || !analytics.weekly_activity || analytics.weekly_activity.length === 0) return null;
-    
+
     const data = analytics.weekly_activity;
-    
+
     // Dimensiones
     const width = 600;
     const height = 240;
     const padding = 30;
     const chartWidth = width - padding * 2;
     const chartHeight = height - padding * 2;
+
+    const formatDate = (dateString) => {
+      if (!dateString) return '';
+      const [year, month, day] = dateString.split('-');
+      const months = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic'];
+      return `${parseInt(day, 10)} ${months[parseInt(month, 10) - 1]}`;
+    };
 
     // Encontrar el valor máximo para escalar la gráfica de forma adaptativa
     const maxVal = Math.max(
@@ -177,7 +193,7 @@ export default function AdminPage() {
     );
 
     // Mapeo de coordenadas
-    const getX = (index) => padding + (index / (data.length - 1)) * chartWidth;
+    const getX = (index) => padding + (index / Math.max(1, data.length - 1)) * chartWidth;
     const getY = (value) => padding + chartHeight - (value / maxVal) * chartHeight;
 
     // Generar paths
@@ -185,13 +201,37 @@ export default function AdminPage() {
       return data.map((d, i) => `${i === 0 ? 'M' : 'L'} ${getX(i)} ${getY(d[key])}`).join(' ');
     };
 
+    const generateAreaPath = (key) => {
+      const linePath = data.map((d, i) => `${i === 0 ? 'M' : 'L'} ${getX(i)} ${getY(d[key])}`).join(' ');
+      return `${linePath} L ${getX(data.length - 1)} ${height - padding} L ${getX(0)} ${height - padding} Z`;
+    };
+
     const scansPath = generatePath("scans");
     const clicksPath = generatePath("google_clicks");
     const feedbacksPath = generatePath("internal_feedbacks");
 
+    const scansAreaPath = generateAreaPath("scans");
+    const clicksAreaPath = generateAreaPath("google_clicks");
+    const feedbacksAreaPath = generateAreaPath("internal_feedbacks");
+
     return (
-      <div className="svg-container">
-        <svg viewBox={`0 0 ${width} ${height}`} width="100%" height="100%">
+      <div className="svg-container" style={{ position: 'relative' }}>
+        <svg viewBox={`0 0 ${width} ${height}`} width="100%" height="100%" onMouseLeave={() => setHoveredIndex(null)}>
+          <defs>
+            <linearGradient id="gradient-scans" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stopColor="#3b82f6" stopOpacity="0.25" />
+              <stop offset="100%" stopColor="#3b82f6" stopOpacity="0" />
+            </linearGradient>
+            <linearGradient id="gradient-clicks" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stopColor="#10b981" stopOpacity="0.25" />
+              <stop offset="100%" stopColor="#10b981" stopOpacity="0" />
+            </linearGradient>
+            <linearGradient id="gradient-feedbacks" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stopColor="#f59e0b" stopOpacity="0.25" />
+              <stop offset="100%" stopColor="#f59e0b" stopOpacity="0" />
+            </linearGradient>
+          </defs>
+
           {/* Grid lines */}
           {[0, 0.25, 0.5, 0.75, 1].map((ratio, idx) => {
             const y = padding + chartHeight * ratio;
@@ -207,6 +247,11 @@ export default function AdminPage() {
           {/* Ejes */}
           <line x1={padding} y1={height - padding} x2={width - padding} y2={height - padding} stroke="hsl(var(--border))" strokeWidth="1.5" />
 
+          {/* Áreas (relleno) */}
+          <path d={scansAreaPath} fill="url(#gradient-scans)" stroke="none" />
+          <path d={clicksAreaPath} fill="url(#gradient-clicks)" stroke="none" />
+          <path d={feedbacksAreaPath} fill="url(#gradient-feedbacks)" stroke="none" />
+
           {/* Línea de Escaneos (Azul) */}
           <path d={scansPath} fill="none" stroke="#3b82f6" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
           {/* Línea de Redirecciones (Verde) */}
@@ -215,18 +260,66 @@ export default function AdminPage() {
           <path d={feedbacksPath} fill="none" stroke="#f59e0b" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
 
           {/* Puntos de interacción */}
-          {data.map((d, i) => (
-            <g key={i}>
-              <circle cx={getX(i)} cy={getY(d.scans)} r="4" fill="#3b82f6" stroke="hsl(var(--card))" strokeWidth="1.5" />
-              <circle cx={getX(i)} cy={getY(d.google_clicks)} r="4" fill="#10b981" stroke="hsl(var(--card))" strokeWidth="1.5" />
-              <circle cx={getX(i)} cy={getY(d.internal_feedbacks)} r="4" fill="#f59e0b" stroke="hsl(var(--card))" strokeWidth="1.5" />
-              {/* Labels inferiores (Fechas cortas) */}
-              <text x={getX(i)} y={height - padding + 18} textAnchor="middle" fontSize="10" fill="hsl(var(--muted))">
-                {d.date.substring(5)}
-              </text>
-            </g>
-          ))}
+          {data.map((d, i) => {
+            const isHovered = hoveredIndex === i;
+            const zoneWidth = chartWidth / Math.max(1, data.length - 1);
+            return (
+              <g key={i}>
+                {/* Zona de hover (columna invisible) */}
+                <rect
+                  x={getX(i) - zoneWidth / 2}
+                  y={padding}
+                  width={zoneWidth}
+                  height={chartHeight}
+                  fill="transparent"
+                  onMouseEnter={() => setHoveredIndex(i)}
+                  style={{ cursor: 'pointer' }}
+                />
+
+                {/* Línea vertical en hover */}
+                {isHovered && (
+                  <line
+                    x1={getX(i)}
+                    y1={padding}
+                    x2={getX(i)}
+                    y2={height - padding}
+                    stroke="hsl(var(--border))"
+                    strokeWidth="1.5"
+                    pointerEvents="none"
+                  />
+                )}
+
+                <circle cx={getX(i)} cy={getY(d.scans)} r={isHovered ? "6" : "4"} fill="#3b82f6" stroke="hsl(var(--card))" strokeWidth="1.5" pointerEvents="none" />
+                <circle cx={getX(i)} cy={getY(d.google_clicks)} r={isHovered ? "6" : "4"} fill="#10b981" stroke="hsl(var(--card))" strokeWidth="1.5" pointerEvents="none" />
+                <circle cx={getX(i)} cy={getY(d.internal_feedbacks)} r={isHovered ? "6" : "4"} fill="#f59e0b" stroke="hsl(var(--card))" strokeWidth="1.5" pointerEvents="none" />
+
+                {/* Labels inferiores (Fechas cortas) */}
+                <text x={getX(i)} y={height - padding + 18} textAnchor="middle" fontSize="10" fill="hsl(var(--muted))" fontWeight={isHovered ? "600" : "normal"} pointerEvents="none">
+                  {formatDate(d.date)}
+                </text>
+              </g>
+            );
+          })}
         </svg>
+
+        {/* Tooltip HTML */}
+        {hoveredIndex !== null && data[hoveredIndex] && (
+          <div
+            className="chart-tooltip"
+            style={{
+              position: 'absolute',
+              left: `calc(${(getX(hoveredIndex) / width) * 100}% + 15px)`,
+              top: `calc(${(getY(data[hoveredIndex].scans) / height) * 100}% - 20px)`,
+              transform: getX(hoveredIndex) > width * 0.7 ? 'translateX(calc(-100% - 30px))' : 'none',
+              pointerEvents: 'none'
+            }}
+          >
+            <div className="tooltip-title">{formatDate(data[hoveredIndex].date)}</div>
+            <div className="tooltip-row tip-blue">Escaneos : {data[hoveredIndex].scans}</div>
+            <div className="tooltip-row tip-green">Clics a Google : {data[hoveredIndex].google_clicks}</div>
+            <div className="tooltip-row tip-orange">Quejas (1–3★) : {data[hoveredIndex].internal_feedbacks}</div>
+          </div>
+        )}
       </div>
     );
   };
@@ -234,13 +327,12 @@ export default function AdminPage() {
   // --- Lógica del Gráfico SVG de Distribución de Estrellas ---
   const renderRatingsDistribution = () => {
     if (!analytics || !analytics.ratings_distribution) return null;
-    
+
     const dist = analytics.ratings_distribution;
     // Pydantic serializa con alias: "1_star", "2_stars", etc.
     const starKeys = ["5_stars", "4_stars", "3_stars", "2_stars", "1_star"];
     const labels = ["5 estrellas", "4 estrellas", "3 estrellas", "2 estrellas", "1 estrella"];
-    const colors = ["#10b981", "#10b981", "#ffb020", "#f59e0b", "#ef4444"];
-    
+
     const total = starKeys.reduce((sum, key) => sum + (dist[key] || 0), 0);
 
     return (
@@ -254,23 +346,46 @@ export default function AdminPage() {
               <div className="bar-wrapper">
                 <div
                   className="bar-fill"
-                  style={{ width: `${percentage}%`, backgroundColor: colors[idx] }}
+                  style={{ width: `${percentage}%`, backgroundColor: '#3b82f6' }}
                 ></div>
               </div>
               <span className="bar-count">{val}</span>
             </div>
           );
         })}
+        <div className="bar-total-row">
+          <span className="bar-total-label">Total de valoraciones</span>
+          <span className="bar-total-value">{total}</span>
+        </div>
       </div>
     );
   };
 
   return (
     <div className="admin-layout">
+      {/* Mobile Navigation Bar (Sólo en móviles < 768px) */}
+      <div className="mobile-navbar">
+        <div className="mobile-brand">
+          <h2 className="brand-title" style={{ fontSize: "1.2rem", margin: 0 }}>QuickFeedback</h2>
+        </div>
+        <button
+          type="button"
+          className="mobile-hamburger"
+          onClick={() => setIsSidebarOpen(!isSidebarOpen)}
+          aria-label="Abrir Menú"
+        >
+          {isSidebarOpen ? "✕" : "☰"}
+        </button>
+      </div>
+
+      {/* Backdrop overlay para cerrar menú en móvil */}
+      {isSidebarOpen && (
+        <div className="sidebar-overlay" onClick={() => setIsSidebarOpen(false)} />
+      )}
+
       {/* Sidebar Nav */}
-      <aside className="admin-sidebar">
+      <aside className={`admin-sidebar ${isSidebarOpen ? "open" : ""}`}>
         <div className="sidebar-brand">
-          <div className="brand-logo">📊</div>
           <div>
             <h2 className="brand-title">QuickFeedback</h2>
           </div>
@@ -278,24 +393,24 @@ export default function AdminPage() {
 
         <nav className="sidebar-menu">
           <button
-            onClick={() => setActiveTab("dashboard")}
+            onClick={() => handleTabChange("dashboard")}
             className={`menu-item ${activeTab === "dashboard" ? "active" : ""}`}
           >
-            <span className="menu-icon">📉</span> Panel de Control
+            <img src="/icon-dashboard.png" alt="" className="menu-icon" /> Panel de Control
           </button>
-          
+
           <button
-            onClick={() => setActiveTab("feedback")}
+            onClick={() => handleTabChange("feedback")}
             className={`menu-item ${activeTab === "feedback" ? "active" : ""}`}
           >
-            <span className="menu-icon">💬</span> Historial de Quejas
+            <img src="/icon-complaints.png" alt="" className="menu-icon" /> Historial de Quejas
           </button>
-          
+
           <button
-            onClick={() => setActiveTab("settings")}
+            onClick={() => handleTabChange("settings")}
             className={`menu-item ${activeTab === "settings" ? "active" : ""}`}
           >
-            <span className="menu-icon">⚙️</span> Configuración Visual
+            <img src="/icon-settings.png" alt="" className="menu-icon" /> Configuración Visual
           </button>
         </nav>
 
@@ -308,7 +423,7 @@ export default function AdminPage() {
             </div>
           </div>
           <button onClick={handleLogout} className="btn-logout">
-            🚪 Cerrar Sesión
+            Cerrar Sesión
           </button>
         </div>
       </aside>
@@ -330,7 +445,7 @@ export default function AdminPage() {
           <div className="header-actions">
             {location && location.logo_url && (
               <img
-                src={`http://localhost:8000${location.logo_url}`}
+                src={`${BACKEND_URL}${location.logo_url}`}
                 alt="Logo"
                 className="header-logo-preview"
                 onError={(e) => { e.target.style.display = 'none'; }}
@@ -375,10 +490,16 @@ export default function AdminPage() {
               </div>
 
               <div className="card kpi-card">
-                <span className="kpi-icon icon-purple">🎯</span>
+                <div className="kpi-icon icon-purple">
+                  <img src="/icon-star.png" alt="Calificación Promedio" style={{ width: "26px", height: "26px", objectFit: "contain" }} />
+                </div>
                 <div className="kpi-body">
-                  <h3 className="kpi-value">{analytics.summary.gating_efficiency_percentage}%</h3>
-                  <p className="kpi-label">Eficiencia del Embudo</p>
+                  <h3 className="kpi-value">
+                    {analytics.summary.average_rating > 0
+                      ? `${analytics.summary.average_rating.toFixed(1)} ★`
+                      : "Sin notas"}
+                  </h3>
+                  <p className="kpi-label">Calificación Promedio</p>
                 </div>
               </div>
             </div>
@@ -394,8 +515,8 @@ export default function AdminPage() {
                   </div>
                   <div className="chart-legend">
                     <span className="legend-item"><span className="legend-dot color-blue"></span> Escaneos</span>
-                    <span className="legend-item"><span className="legend-dot color-green"></span> Clics</span>
-                    <span className="legend-item"><span className="legend-dot color-orange"></span> Quejas</span>
+                    <span className="legend-item"><span className="legend-dot color-green"></span> Clics (Google)</span>
+                    <span className="legend-item"><span className="legend-dot color-orange"></span> Quejas (1-3★)</span>
                   </div>
                 </div>
                 {renderWeeklyActivityChart()}
@@ -407,7 +528,7 @@ export default function AdminPage() {
                   <h3 className="chart-title">Distribución de Estrellas</h3>
                   <p className="chart-subtitle">Resumen histórico de satisfacción</p>
                 </div>
-                <div style={{ marginTop: "1.5rem" }}>
+                <div style={{ marginTop: "0.25rem" }}>
                   {renderRatingsDistribution()}
                 </div>
               </div>
@@ -424,7 +545,7 @@ export default function AdminPage() {
                   Ver todo el historial
                 </button>
               </div>
-              
+
               <div className="table-container">
                 <table className="data-table">
                   <thead>
@@ -438,14 +559,14 @@ export default function AdminPage() {
                     {feedbackData.items.slice(0, 3).map((item) => (
                       <tr key={item.id}>
                         <td className="table-date">
-                          {new Date(item.created_at).toLocaleDateString()} {new Date(item.created_at).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}
+                          {new Date(item.created_at).toLocaleDateString()} {new Date(item.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                         </td>
                         <td>
                           <span className={`badge-stars ${item.rating >= 4 ? 'bg-success' : 'bg-warning'}`}>
                             {item.rating} ★
                           </span>
                         </td>
-                        <td className="table-comment">{item.comment || <em style={{opacity: 0.5}}>Sin comentario (redirección)</em>}</td>
+                        <td className="table-comment">{item.comment || <em style={{ opacity: 0.5 }}>Sin comentario (redirección)</em>}</td>
                       </tr>
                     ))}
                     {feedbackData.items.length === 0 && (
@@ -495,7 +616,7 @@ export default function AdminPage() {
                             {item.rating} ★
                           </span>
                         </td>
-                        <td className="table-comment">{item.comment || <em style={{opacity: 0.5}}>Sin comentario (Redireccionado a Google Maps)</em>}</td>
+                        <td className="table-comment">{item.comment || <em style={{ opacity: 0.5 }}>Sin comentario (Redireccionado a Google Maps)</em>}</td>
                       </tr>
                     ))}
                     {feedbackData.items.length === 0 && (
@@ -542,7 +663,7 @@ export default function AdminPage() {
               {/* Formulario de ajustes */}
               <div className="card">
                 <h3 className="chart-title" style={{ marginBottom: "1.5rem" }}>Branding y Enlaces</h3>
-                
+
                 <form onSubmit={handleSaveConfig}>
                   {saveSuccess && (
                     <div className="alert alert-success fade-in">
@@ -566,46 +687,6 @@ export default function AdminPage() {
                       onChange={(e) => setConfigName(e.target.value)}
                       required
                     />
-                  </div>
-
-                  <div className="colors-row">
-                    <div className="input-group flex-1">
-                      <label className="input-label" htmlFor="loc-primary">Color Primario</label>
-                      <div className="color-picker-wrapper">
-                        <input
-                          id="loc-primary"
-                          type="color"
-                          className="color-input"
-                          value={configPrimary}
-                          onChange={(e) => setConfigPrimary(e.target.value)}
-                        />
-                        <input
-                          type="text"
-                          className="input color-text"
-                          value={configPrimary.toUpperCase()}
-                          onChange={(e) => setConfigPrimary(e.target.value)}
-                        />
-                      </div>
-                    </div>
-
-                    <div className="input-group flex-1">
-                      <label className="input-label" htmlFor="loc-secondary">Color de Acento</label>
-                      <div className="color-picker-wrapper">
-                        <input
-                          id="loc-secondary"
-                          type="color"
-                          className="color-input"
-                          value={configSecondary}
-                          onChange={(e) => setConfigSecondary(e.target.value)}
-                        />
-                        <input
-                          type="text"
-                          className="input color-text"
-                          value={configSecondary.toUpperCase()}
-                          onChange={(e) => setConfigSecondary(e.target.value)}
-                        />
-                      </div>
-                    </div>
                   </div>
 
                   <div className="input-group" style={{ marginTop: "0.5rem" }}>
@@ -670,34 +751,70 @@ export default function AdminPage() {
               <div className="card preview-card-outer">
                 <h3 className="chart-title" style={{ marginBottom: "0.5rem" }}>Vista Previa en Tiempo Real</h3>
                 <p className="chart-subtitle" style={{ marginBottom: "1.5rem" }}>Así se verá la pantalla en los móviles de tus clientes</p>
-                
-                <div
-                  className="mobile-preview-container"
-                  style={{
-                    "--preview-primary": configPrimary,
-                    "--preview-secondary": configSecondary
-                  }}
-                >
+
+                <div className="mobile-preview-container">
                   <div className="mobile-preview-screen">
-                    <div className="preview-logo-wrapper">
-                      {logoPreview ? (
-                        <img src={logoPreview} alt="Logo" className="preview-logo" />
-                      ) : (
-                        <div className="preview-logo-placeholder">Fallback</div>
-                      )}
+                    {/* Replicating actual RatingTemplate and SelectStarsStep */}
+                    <div style={{
+                      backgroundColor: '#0f1115',
+                      color: '#ffffff',
+                      width: '100%',
+                      height: '100%',
+                      borderRadius: '28px',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      alignItems: 'center',
+                      padding: '1rem',
+                      boxSizing: 'border-box',
+                      fontFamily: 'system-ui, sans-serif'
+                    }}>
+                      <div style={{
+                        width: '100%',
+                        backgroundColor: '#16171b',
+                        border: '1px solid rgba(255, 255, 255, 0.08)',
+                        borderRadius: '24px',
+                        boxShadow: '0 0 20px rgba(255, 179, 0, 0.05), inset 0 0 1px 1px rgba(255, 255, 255, 0.05)',
+                        padding: '1.5rem 1rem',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        alignItems: 'center',
+                        textAlign: 'center'
+                      }}>
+                        <div style={{ marginBottom: '1.25rem', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+                          {logoPreview ? (
+                            <img src={logoPreview} alt="Logo" style={{ maxHeight: '45px', maxWidth: '140px', objectFit: 'contain', marginBottom: '0.75rem' }} />
+                          ) : (
+                            <div style={{
+                              height: '45px', width: '45px', 
+                              background: 'linear-gradient(135deg, #ffb300 0%, #f59e0b 100%)',
+                              color: '#000', fontWeight: 'bold', fontSize: '1.2rem',
+                              display: 'flex', alignItems: 'center', justifyContent: 'center',
+                              borderRadius: '12px', marginBottom: '0.75rem',
+                              boxShadow: '0 4px 10px rgba(245, 158, 11, 0.3)'
+                            }}>
+                              {(configName || "M")[0]?.toUpperCase()}
+                            </div>
+                          )}
+                          <h1 style={{ margin: 0, fontSize: '1.1rem', fontWeight: '700', color: '#ffffff', letterSpacing: '-0.02em' }}>
+                            {configName || "Mi Local"}
+                          </h1>
+                        </div>
+                        
+                        <h2 style={{ fontSize: '1.1rem', fontWeight: '700', marginBottom: '1rem', lineHeight: '1.25' }}>
+                          ¿Cómo calificarías tu experiencia hoy?
+                        </h2>
+                        
+                        <div style={{ display: 'flex', gap: '0.35rem', marginBottom: '0.5rem' }}>
+                          {[1, 2, 3, 4, 5].map(s => (
+                            <span key={s} style={{ fontSize: '2.2rem', color: 'rgba(255, 255, 255, 0.15)', lineHeight: 1 }}>★</span>
+                          ))}
+                        </div>
+                      </div>
+                      
+                      <footer style={{ marginTop: 'auto', fontSize: '0.65rem', color: '#6b7280', letterSpacing: '0.05em' }}>
+                        Privacy <span style={{ margin: '0 0.5rem', color: 'rgba(255, 255, 255, 0.12)' }}>|</span> Contact
+                      </footer>
                     </div>
-                    <h4 className="preview-name">{configName || "Mi Local"}</h4>
-                    <p className="preview-sub">Tu opinión es muy importante para nosotros</p>
-                    
-                    <div className="preview-stars">
-                      {[1,2,3,4,5].map(s => (
-                        <span key={s} className="preview-star">★</span>
-                      ))}
-                    </div>
-                    
-                    <button type="button" className="btn-preview-action">
-                      Continuar
-                    </button>
                   </div>
                 </div>
               </div>
@@ -734,12 +851,12 @@ export default function AdminPage() {
           color: #0f172a;
         }
 
-        /* Sidebar Nav - Black Background */
+        /* Sidebar Nav - Light Theme */
         .admin-sidebar {
           width: 260px;
-          border-right: 1px solid #27272a;
-          background-color: #111111;
-          color: #ffffff;
+          border-right: 1px solid #e2e8f0;
+          background-color: #ffffff;
+          color: #334155;
           display: flex;
           flex-direction: column;
           padding: 1.5rem;
@@ -748,12 +865,6 @@ export default function AdminPage() {
           bottom: 0;
           left: 0;
           z-index: 10;
-          /* Forzar variables de Dark Theme en el Sidebar */
-          --foreground: 210 20% 96%;
-          --border: 220 20% 16%;
-          --card: 220 30% 9%;
-          --muted: 220 10% 65%;
-          --muted-light: 220 20% 13%;
         }
 
         .sidebar-brand {
@@ -761,7 +872,7 @@ export default function AdminPage() {
           align-items: center;
           gap: 0.75rem;
           margin-bottom: 2.25rem;
-          color: #ffffff;
+          color: #0f172a;
         }
 
         .brand-logo {
@@ -771,7 +882,7 @@ export default function AdminPage() {
         .brand-title {
           font-size: 1.1rem;
           font-weight: 700;
-          color: #ffffff;
+          color: #0f172a;
         }
 
         .brand-badge {
@@ -798,7 +909,7 @@ export default function AdminPage() {
           border-radius: 10px;
           background: none;
           border: none;
-          color: #a1a1aa;
+          color: #334155;
           font-family: inherit;
           font-size: 0.9rem;
           font-weight: 500;
@@ -807,19 +918,39 @@ export default function AdminPage() {
           transition: all 0.15s ease;
         }
 
+        .menu-icon {
+          width: 26px;
+          height: 26px;
+          object-fit: contain;
+          flex-shrink: 0;
+          opacity: 0.65;
+          filter: none;
+          transition: all 0.15s ease;
+        }
+
         .menu-item:hover {
-          background-color: #27272a;
-          color: #ffffff;
+          background-color: #f1f5f9;
+          color: #0f172a;
+        }
+
+        .menu-item:hover .menu-icon {
+          opacity: 0.8;
         }
 
         .menu-item.active {
-          background-color: #2563eb;
-          color: #ffffff;
+          background-color: #f1f5f9;
+          color: #0f172a;
           font-weight: 600;
+          box-shadow: inset 3px 0 0 0 #0f172a;
+        }
+        
+        .menu-item.active .menu-icon {
+          opacity: 1;
+          filter: none;
         }
 
         .sidebar-footer {
-          border-top: 1px solid #27272a;
+          border-top: 1px solid #e2e8f0;
           padding-top: 1.25rem;
           display: flex;
           flex-direction: column;
@@ -836,8 +967,8 @@ export default function AdminPage() {
           width: 36px;
           height: 36px;
           border-radius: 50%;
-          background: #27272a;
-          color: #ffffff;
+          background: #f1f5f9;
+          color: #0f172a;
           display: flex;
           align-items: center;
           justify-content: center;
@@ -853,7 +984,7 @@ export default function AdminPage() {
         .user-email {
           font-size: 0.85rem;
           font-weight: 600;
-          color: #ffffff;
+          color: #0f172a;
           white-space: nowrap;
           overflow: hidden;
           text-overflow: ellipsis;
@@ -861,17 +992,17 @@ export default function AdminPage() {
 
         .user-role {
           font-size: 0.75rem;
-          color: #a1a1aa;
+          color: #64748b;
         }
 
         .btn-logout {
           background: none;
-          border: 1px solid #27272a;
+          border: 1px solid #e2e8f0;
           padding: 0.5rem;
           border-radius: 8px;
           font-size: 0.85rem;
           font-weight: 600;
-          color: #ffffff;
+          color: #475569;
           cursor: pointer;
           transition: background-color 0.15s;
         }
@@ -888,7 +1019,7 @@ export default function AdminPage() {
           flex: 1;
           min-width: 0;
           padding: 2.25rem;
-          background-color: #ffffff;
+          background-color: #f8fafc;
           min-height: 100vh;
         }
 
@@ -943,10 +1074,10 @@ export default function AdminPage() {
           border-radius: 12px;
         }
 
-        .icon-blue { background-color: rgba(59, 130, 246, 0.1); }
-        .icon-green { background-color: rgba(16, 185, 129, 0.1); }
-        .icon-orange { background-color: rgba(245, 158, 11, 0.1); }
-        .icon-purple { background-color: rgba(139, 92, 246, 0.1); }
+        .icon-blue,
+        .icon-green,
+        .icon-orange,
+        .icon-purple { background-color: rgba(59, 130, 246, 0.1); }
 
         .kpi-body {
           display: flex;
@@ -1039,7 +1170,7 @@ export default function AdminPage() {
         .horizontal-bar-chart {
           display: flex;
           flex-direction: column;
-          gap: 0.75rem;
+          gap: 0.9rem;
         }
 
         .bar-row {
@@ -1073,6 +1204,28 @@ export default function AdminPage() {
           width: 24px;
           text-align: right;
           font-weight: 600;
+        }
+
+        .bar-total-row {
+          display: flex;
+          justify-content: flex-end;
+          align-items: center;
+          gap: 0.5rem;
+          margin-top: 0.5rem;
+          padding-top: 0.75rem;
+          border-top: 1px solid hsl(var(--border));
+        }
+
+        .bar-total-label {
+          font-size: 0.8rem;
+          font-weight: 500;
+          color: hsl(var(--muted));
+        }
+
+        .bar-total-value {
+          font-size: 0.95rem;
+          font-weight: 700;
+          color: #0f172a;
         }
 
         /* Tables */
@@ -1248,10 +1401,10 @@ export default function AdminPage() {
         }
 
         .mobile-preview-screen {
-          background: hsl(var(--background));
+          background: #0f1115; /* Match rating template background */
           flex: 1;
           border-radius: 28px;
-          padding: 1.5rem 1rem;
+          padding: 0;
           display: flex;
           flex-direction: column;
           align-items: center;
@@ -1259,64 +1412,155 @@ export default function AdminPage() {
           overflow: hidden;
         }
 
-        .preview-logo-wrapper {
-          margin-top: 1.5rem;
-          margin-bottom: 0.75rem;
-        }
-
-        .preview-logo {
-          height: 36px;
-          width: auto;
-          border-radius: 6px;
-        }
-
-        .preview-logo-placeholder {
-          height: 36px;
-          width: 36px;
-          background: var(--preview-primary);
-          color: white;
+        /* Chart Tooltip */
+        .chart-tooltip {
+          background-color: #ffffff;
+          border: 1px solid #e2e8f0;
           border-radius: 8px;
-          font-weight: bold;
-          font-size: 0.6rem;
-          display: flex;
-          align-items: center;
-          justify-content: center;
+          padding: 12px;
+          box-shadow: 0 4px 10px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+          z-index: 10;
+          min-width: 150px;
         }
-
-        .preview-name {
-          font-size: 0.95rem;
+        .tooltip-title {
           font-weight: 700;
+          font-size: 13px;
+          margin-bottom: 8px;
+          color: #0f172a;
+        }
+        .tooltip-row {
+          font-size: 12px;
+          margin-bottom: 4px;
+          font-weight: 500;
+          background: none;
+        }
+        .tip-blue { color: #3b82f6; }
+        .tip-green { color: #10b981; }
+        .tip-orange { color: #f59e0b; }
+
+        /* Estilos Responsivos (Mobile & Tablet) */
+        .mobile-navbar {
+          display: none;
+          justify-content: space-between;
+          align-items: center;
+          padding: 0.85rem 1.25rem;
+          background-color: #18181b;
+          color: #ffffff;
+          position: sticky;
+          top: 0;
+          z-index: 100;
+          border-bottom: 1px solid #27272a;
         }
 
-        .preview-sub {
-          font-size: 0.65rem;
-          color: hsl(var(--muted));
-          margin-top: 0.125rem;
-        }
-
-        .preview-stars {
-          display: flex;
-          gap: 0.15rem;
-          margin: 1.5rem 0 0.5rem;
-        }
-
-        .preview-star {
+        .mobile-hamburger {
+          background: none;
+          border: 1px solid #3f3f46;
+          color: #ffffff;
           font-size: 1.25rem;
-          color: #ffb020;
+          padding: 0.25rem 0.6rem;
+          border-radius: 6px;
+          cursor: pointer;
         }
 
-        .btn-preview-action {
-          width: 100%;
-          background-color: var(--preview-primary);
-          color: white;
-          border: none;
-          font-family: inherit;
-          font-size: 0.75rem;
-          font-weight: bold;
-          padding: 0.5rem;
-          border-radius: 6px;
-          margin-top: auto;
-          cursor: default;
+        .sidebar-overlay {
+          position: fixed;
+          top: 0;
+          left: 0;
+          right: 0;
+          bottom: 0;
+          background-color: rgba(0, 0, 0, 0.5);
+          backdrop-filter: blur(2px);
+          z-index: 998;
+        }
+
+        @media (max-width: 768px) {
+          .mobile-navbar {
+            display: flex;
+          }
+
+          .admin-layout {
+            flex-direction: column;
+          }
+
+          .admin-sidebar {
+            position: fixed;
+            top: 0;
+            left: 0;
+            height: 100vh;
+            z-index: 999;
+            transform: translateX(-100%);
+            transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            box-shadow: var(--shadow-lg);
+          }
+
+          .admin-sidebar.open {
+            transform: translateX(0);
+          }
+
+          .admin-main {
+            margin-left: 0 !important;
+            padding: 1.25rem 1rem !important;
+          }
+
+          .main-header {
+            flex-direction: column;
+            align-items: flex-start;
+            gap: 0.75rem;
+            margin-bottom: 1.25rem;
+          }
+
+          .header-title {
+            font-size: 1.35rem;
+          }
+
+          .header-subtitle {
+            font-size: 0.8rem;
+          }
+
+          .kpi-grid {
+            grid-template-columns: repeat(2, 1fr);
+            gap: 0.75rem;
+          }
+
+          .kpi-card {
+            padding: 1rem;
+            gap: 0.75rem;
+          }
+
+          .kpi-icon {
+            width: 38px;
+            height: 38px;
+            font-size: 1.25rem;
+          }
+
+          .kpi-value {
+            font-size: 1.25rem;
+          }
+
+          .kpi-label {
+            font-size: 0.7rem;
+          }
+
+          .chart-header {
+            flex-direction: column;
+            align-items: flex-start;
+            gap: 0.5rem;
+          }
+
+          .chart-legend {
+            flex-wrap: wrap;
+          }
+        }
+
+        @media (max-width: 480px) {
+          .kpi-grid {
+            grid-template-columns: 1fr;
+          }
+
+          .paginator {
+            flex-direction: column;
+            gap: 0.75rem;
+          }
         }
       `}</style>
     </div>

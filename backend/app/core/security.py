@@ -32,6 +32,7 @@ def create_access_token(
     subject: Union[str, Any],
     tenant_id: Optional[Union[str, Any]] = None,
     role: str = "admin",
+    requires_password_change: bool = False,
     expires_delta: Optional[timedelta] = None
 ) -> str:
     """
@@ -50,7 +51,8 @@ def create_access_token(
         "exp": expire,
         "sub": str(subject),
         "role": role,
-        "tenant_id": str(tenant_id) if tenant_id else None
+        "tenant_id": str(tenant_id) if tenant_id else None,
+        "requires_password_change": requires_password_change
     }
     
     encoded_jwt = jwt.encode(

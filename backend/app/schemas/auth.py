@@ -29,3 +29,10 @@ class TokenResponse(BaseModel):
     access_token: str
     token_type: str = "bearer"
     expires_in: int
+
+class PasswordChangeRequest(BaseModel):
+    """
+    Esquema de entrada para actualizar la contraseña del usuario logueado.
+    """
+    current_password: str = Field(..., min_length=1, description="Contraseña actual o temporal")
+    new_password: str = Field(..., min_length=6, max_length=100, description="Nueva contraseña definitiva")

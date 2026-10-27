@@ -2,7 +2,7 @@ import asyncio
 import uuid
 from datetime import datetime, timezone
 from sqlalchemy import select, text
-from fastapi import HTTPException
+from fastapi import HTTPException, Request
 
 # Importar componentes de la aplicación
 from app.core.database import AsyncSessionLocal, get_tenant_db
@@ -86,7 +86,8 @@ async def main():
         credentials = HTTPAuthorizationCredentials(scheme="Bearer", credentials=token)
         
         # Invocar la dependencia get_current_user
-        current_user = await get_current_user(http_auth=credentials, db=session)
+        dummy_request = Request(scope={"type": "http", "path": "/v1/admin/location", "method": "GET"})
+        current_user = await get_current_user(request=dummy_request, http_auth=credentials, db=session)
         print(f"Usuario autenticado por JWT: {current_user.email} (Rol: {current_user.role})")
         assert current_user.email == test_email
         assert current_user.tenant_id == tenant_id
@@ -136,6 +137,9 @@ async def main():
             print("¡Éxito! El login fue rechazado con 403 Forbidden debido a tenant eliminado.")
 
     print("\n¡Todas las pruebas de flujo de autenticación y seguridad pasaron con 100% de éxito!")
+
+    from app.commands.create_superadmin import create_superadmin
+    await create_superadmin()
 
 if __name__ == "__main__":
     asyncio.run(main())

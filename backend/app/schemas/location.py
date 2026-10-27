@@ -9,18 +9,18 @@ HEX_COLOR_REGEX = re.compile(r"^#[0-9a-fA-F]{6}$")
 class LocationUpdate(BaseModel):
     """
     Esquema para validar la actualización de un local por parte de su administrador.
-    Valida formatos cromáticos hexadecimales y la longitud de URLs y nombres.
+    Valida la longitud de URLs y nombres.
     """
     name: str = Field(..., min_length=1, max_length=255)
     logo_url: Optional[str] = Field(None, max_length=512)
-    primary_color: str = Field(..., description="Color primario hexadecimal (ej: #FF5733)")
-    secondary_color: str = Field(..., description="Color secundario hexadecimal (ej: #FFFFFF)")
+    primary_color: Optional[str] = Field(None, description="Color primario hexadecimal opcional")
+    secondary_color: Optional[str] = Field(None, description="Color secundario hexadecimal opcional")
     google_maps_url: str = Field(..., min_length=10, description="URL de la ficha de Google Maps")
 
     @field_validator("primary_color", "secondary_color")
     @classmethod
-    def validate_hex_color(cls, v: str) -> str:
-        if not HEX_COLOR_REGEX.match(v):
+    def validate_hex_color(cls, v: Optional[str]) -> Optional[str]:
+        if v is not None and not HEX_COLOR_REGEX.match(v):
             raise ValueError(
                 "El color debe estar en formato hexadecimal válido de 6 dígitos (ej: #FF5733)."
             )

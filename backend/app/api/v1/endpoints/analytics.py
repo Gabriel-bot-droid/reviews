@@ -37,17 +37,20 @@ async def get_analytics_data(
     clicks_result = await db.execute(clicks_query)
     total_clicks = clicks_result.scalar() or 0
 
-    feedbacks_count_query = select(func.count(Feedback.id))
+    feedbacks_count_query = select(func.count(Feedback.id)).where(Feedback.rating <= 3)
     feedbacks_count_result = await db.execute(feedbacks_count_query)
     total_feedbacks = feedbacks_count_result.scalar() or 0
 
-    gating_efficiency = (total_clicks / total_scans * 100) if total_scans > 0 else 0.0
+    avg_rating_query = select(func.avg(Feedback.rating))
+    avg_result = await db.execute(avg_rating_query)
+    raw_avg = avg_result.scalar()
+    average_rating = round(float(raw_avg), 1) if raw_avg is not None else 0.0
 
     summary = AnalyticsSummary(
         total_scans=total_scans,
         total_redirects_google=total_clicks,
         total_internal_feedbacks=total_feedbacks,
-        gating_efficiency_percentage=round(gating_efficiency, 2)
+        average_rating=average_rating
     )
 
     # 2. Calcular distribución de estrellas
@@ -101,13 +104,13 @@ async def get_analytics_data(
     scan_res = await db.execute(scan_query)
     scan_rows = scan_res.all()
 
-    # Feedbacks agrupados por día en UTC
+    # Feedbacks (Quejas retenidas 1-3 estrellas) agrupados por día en UTC
     feedback_query = (
         select(
             func.cast(func.timezone('UTC', Feedback.created_at), Date).label("day"),
             func.count(Feedback.id)
         )
-        .where(Feedback.created_at >= start_datetime)
+        .where((Feedback.created_at >= start_datetime) & (Feedback.rating <= 3))
         .group_by("day")
     )
     feedback_res = await db.execute(feedback_query)

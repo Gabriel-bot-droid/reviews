@@ -1,6 +1,6 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
-  /* config options here */
+  /* output: 'standalone' solo para build de producción/Docker */
 };
 
 export default nextConfig;

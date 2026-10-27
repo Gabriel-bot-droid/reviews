@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { api } from "@/utils/api";
+import { api, decodeToken } from "@/utils/api";
 
 export default function LoginPage() {
   const router = useRouter();
@@ -11,10 +11,24 @@ export default function LoginPage() {
   const [loading, setLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
 
+  const handleRedirect = (token) => {
+    const decoded = decodeToken(token);
+    if (decoded && decoded.role === "superadmin") {
+      router.push("/superadmin");
+    } else if (decoded && decoded.requires_password_change) {
+      router.push("/reset-password");
+    } else {
+      router.push("/admin");
+    }
+  };
+
   // Redirigir al panel si ya está autenticado
   useEffect(() => {
-    if (api.auth.isAuthenticated()) {
-      router.push("/admin");
+    if (typeof window !== "undefined") {
+      const token = localStorage.getItem("admin_token");
+      if (token) {
+        handleRedirect(token);
+      }
     }
   }, [router]);
 
@@ -26,8 +40,12 @@ export default function LoginPage() {
     setErrorMessage("");
 
     try {
-      await api.auth.login(email, password);
-      router.push("/admin");
+      const data = await api.auth.login(email, password);
+      if (data && data.access_token) {
+        handleRedirect(data.access_token);
+      } else {
+        router.push("/admin");
+      }
     } catch (err) {
       setErrorMessage(err.message || "Credenciales incorrectas. Intenta de nuevo.");
       setLoading(false);
@@ -39,7 +57,7 @@ export default function LoginPage() {
       <div className="login-container slide-up">
         {/* Header */}
         <div className="login-header">
-          <div className="login-logo-fallback">🔑</div>
+
           <h1 className="login-title">QuickFeedback NFC</h1>
           <p className="login-subtitle">Inicia sesión en tu panel administrativo</p>
         </div>

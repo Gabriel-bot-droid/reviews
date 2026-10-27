@@ -6,7 +6,7 @@ from app.core.config import settings
 
 # Crear el motor de base de datos asíncrono
 # echo=True registrará todas las consultas SQL ejecutadas en la consola para depuración
-engine = create_async_engine(settings.DATABASE_URL, echo=True)
+engine = create_async_engine(settings.DATABASE_URL, echo=settings.DB_ECHO)
 
 # Factoría de sesiones asíncronas
 AsyncSessionLocal = async_sessionmaker(

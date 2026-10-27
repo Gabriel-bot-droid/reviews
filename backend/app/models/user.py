@@ -31,6 +31,10 @@ class User(Base):
         default="admin", 
         nullable=False
     )
+    requires_password_change: Mapped[bool] = mapped_column(
+        default=False, 
+        nullable=False
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), 
         server_default=func.now(), 

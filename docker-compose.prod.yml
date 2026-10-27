@@ -1,0 +1,87 @@
+version: '3.8'
+
+services:
+  db:
+    image: postgres:15-alpine
+    container_name: reviews_db_prod
+    restart: always
+    environment:
+      POSTGRES_DB: ${DB_NAME:-reviews_db}
+      POSTGRES_USER: ${DB_USER:-reviews_user}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-reviews_password}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - reviews_network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-reviews_user} -d ${DB_NAME:-reviews_db}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    container_name: reviews_redis_prod
+    restart: always
+    volumes:
+      - redis_data:/data
+    networks:
+      - reviews_network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: reviews_backend_prod
+    restart: always
+    environment:
+      DATABASE_URL: postgresql+asyncpg://${DB_USER:-reviews_user}:${DB_PASSWORD:-reviews_password}@db:5432/${DB_NAME:-reviews_db}
+      REDIS_URL: redis://redis:6379/0
+      JWT_SECRET_KEY: ${JWT_SECRET_KEY:-supersecretkey_cambiame_en_produccion}
+      ACCESS_TOKEN_EXPIRE_MINUTES: ${ACCESS_TOKEN_EXPIRE_MINUTES:-1440}
+      CORS_ORIGINS: ${CORS_ORIGINS:-["http://localhost:3000"]}
+      DB_ECHO: ${DB_ECHO:-False}
+    volumes:
+      - backend_uploads:/app/static/uploads
+    ports:
+      - "8000:8000"
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - reviews_network
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: reviews_frontend_prod
+    restart: always
+    environment:
+      NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:8000/v1}
+      NEXT_PUBLIC_BACKEND_URL: ${NEXT_PUBLIC_BACKEND_URL:-http://localhost:8000}
+    ports:
+      - "3000:3000"
+    depends_on:
+      - backend
+    networks:
+      - reviews_network
+
+volumes:
+  postgres_data:
+    driver: local
+  redis_data:
+    driver: local
+  backend_uploads:
+    driver: local
+
+networks:
+  reviews_network:
+    driver: bridge

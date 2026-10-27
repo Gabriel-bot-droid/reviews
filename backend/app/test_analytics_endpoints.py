@@ -157,5 +157,8 @@ async def run_tests():
         assert today_activity["internal_feedbacks"] == 3
         print("¡Éxito! Resumen de analíticas, distribución de estrellas y actividad diaria verificados.")
 
+    from app.commands.create_superadmin import create_superadmin
+    await create_superadmin()
+
 if __name__ == "__main__":
     asyncio.run(run_tests())

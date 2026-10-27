@@ -1,6 +1,6 @@
 import uuid
 from typing import AsyncGenerator
-from fastapi import Depends, HTTPException, status
+from fastapi import Depends, HTTPException, status, Request
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from jose import jwt, JWTError
 from sqlalchemy import select, text
@@ -16,6 +16,7 @@ from app.models.tenant import Tenant
 reusable_oauth2 = HTTPBearer()
 
 async def get_current_user(
+    request: Request,
     http_auth: HTTPAuthorizationCredentials = Depends(reusable_oauth2),
     db: AsyncSession = Depends(get_db)
 ) -> User:
@@ -73,6 +74,19 @@ async def get_current_user(
                 detail="El servicio para esta organización ha sido suspendido o eliminado.",
             )
             
+    # Bloqueo de seguridad corporativo: Si el usuario requiere cambiar su contraseña obligatoriamente,
+    # denegar el acceso a cualquier endpoint excepto la actualización de contraseña (PUT /v1/auth/password)
+    if user.requires_password_change:
+        is_change_password_route = (
+            request.url.path.rstrip("/") == "/v1/auth/password" 
+            and request.method == "PUT"
+        )
+        if not is_change_password_route:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="PASSWORD_CHANGE_REQUIRED",
+            )
+
     return user
 
 async def get_db_session(

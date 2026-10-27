@@ -70,8 +70,10 @@ async def update_location(
     # Actualizar valores
     location.name = payload.name
     location.logo_url = payload.logo_url
-    location.primary_color = payload.primary_color
-    location.secondary_color = payload.secondary_color
+    if payload.primary_color is not None:
+        location.primary_color = payload.primary_color
+    if payload.secondary_color is not None:
+        location.secondary_color = payload.secondary_color
     location.google_maps_url = payload.google_maps_url
     
     # Guardar cambios en la base de datos

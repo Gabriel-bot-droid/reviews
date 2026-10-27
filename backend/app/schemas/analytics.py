@@ -8,7 +8,7 @@ class AnalyticsSummary(BaseModel):
     total_scans: int = Field(..., description="Escaneos totales registrados")
     total_redirects_google: int = Field(..., description="Redirecciones totales a Google Maps")
     total_internal_feedbacks: int = Field(..., description="Opiniones internas recolectadas")
-    gating_efficiency_percentage: float = Field(..., description="Porcentaje de eficiencia del embudo de redirección")
+    average_rating: float = Field(0.0, description="Calificación promedio ponderada del local en estrellas (1.0 a 5.0)")
 
 class RatingsDistribution(BaseModel):
     """

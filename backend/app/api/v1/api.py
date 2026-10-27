@@ -1,5 +1,5 @@
 from fastapi import APIRouter
-from app.api.v1.endpoints import auth, location, resolver, dashboard, feedback, analytics
+from app.api.v1.endpoints import auth, location, resolver, dashboard, feedback, analytics, superadmin
 
 # Enrutador principal de la API V1
 api_router = APIRouter()
@@ -21,3 +21,6 @@ api_router.include_router(feedback.router, prefix="/admin/feedback", tags=["admi
 
 # Registrar las analíticas y métricas avanzadas
 api_router.include_router(analytics.router, prefix="/admin/analytics", tags=["admin-analytics"])
+
+# Registrar los endpoints de administración global y aprovisionamiento (Superadmin)
+api_router.include_router(superadmin.router, prefix="/superadmin", tags=["superadmin"])

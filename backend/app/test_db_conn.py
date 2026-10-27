@@ -66,5 +66,8 @@ async def main():
 
     print("\n¡Prueba de conexión y políticas RLS completada con 100% de éxito!")
 
+    from app.commands.create_superadmin import create_superadmin
+    await create_superadmin()
+
 if __name__ == "__main__":
     asyncio.run(main())

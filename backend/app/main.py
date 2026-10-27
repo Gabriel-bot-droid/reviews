@@ -8,11 +8,24 @@ from slowapi.errors import RateLimitExceeded
 from slowapi import _rate_limit_exceeded_handler
 from app.core.limiter import limiter
 
+from contextlib import asynccontextmanager
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Asegurar que la cuenta súper administrador exista al iniciar el servidor
+    try:
+        from app.commands.create_superadmin import create_superadmin
+        await create_superadmin()
+    except Exception as e:
+        print(f"Error al verificar/crear superadministrador en startup: {e}")
+    yield
+
 # Inicializar la aplicación FastAPI con metadata descriptiva
 app = FastAPI(
     title="QuickFeedback NFC API",
     description="Backend API REST para la gestión dinámica de redirección de reseñas e interceptación de feedback.",
     version="1.0.0",
+    lifespan=lifespan,
 )
 
 # Integrar el limitador de tasa y su manejador de respuestas de error (429 Too Many Requests)
